@@ -110,3 +110,60 @@ This payload shows a more complex decision tree combining conditions, loops, and
   }
 }
 ```
+
+To optimize your Docker image size, a multi-stage build is indeed a great approach. By separating the build process and the final runtime environment, you can exclude unnecessary build tools and dependencies from the final image, resulting in a smaller, leaner image.
+
+Here's how you can modify your Dockerfile to use multi-stage builds:
+
+```dockerfile
+# Use an official Node image as the build stage
+FROM node:22.9.0-slim AS build
+
+# Set the working directory
+WORKDIR /usr/src/app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy the rest of the application code
+COPY . .
+
+# Build the TypeScript files
+RUN npm run build
+
+
+# Use a smaller image for the final stage
+FROM node:22.9.0-slim
+
+# Set the working directory
+WORKDIR /usr/src/app
+
+# Copy only the necessary files from the build stage
+COPY --from=build /usr/src/app/node_modules ./node_modules
+COPY --from=build /usr/src/app/dist ./dist
+COPY --from=build /usr/src/app/package*.json ./
+
+# Expose port 8080
+EXPOSE 8080
+
+# Start the app
+CMD ["npm", "run", "start"]
+```
+
+### Explanation
+1. **Build Stage (`build`)**: x
+   - The `build` stage compiles your TypeScript files and installs all dependencies. This stage includes all tools necessary for building the application.
+   - All files are copied over, and the `npm run build` command is executed to generate your production files.
+
+2. **Final Stage**: 
+   - The second `FROM` statement starts a new, clean image layer. Only the `dist` directory (the output of the build), `node_modules`, and necessary package files are copied from the `build` stage.
+   - This reduces the image size because development dependencies and build tools are excluded from the final image.
+
+### Additional Optimizations
+- **Use `npm ci` for Reproducible Builds**: Ensures the same dependencies are installed as specified in the `package-lock.json`.
+- **Minimize Node Version**: Consider a smaller base image, such as `node:slim` or `node:alpine`, for the runtime stage if it meets your app's requirements.
+  
+This multi-stage approach keeps your image slim by ensuring only what's necessary for running the application is included in the final image.
